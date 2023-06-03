@@ -27,8 +27,7 @@ def get_peft_state_maybe_zero_3(state_dict, bias):
         assert param.ds_status == ZeroParamStatus.NOT_AVAILABLE
         with zero.GatheredParameters([param]):
             param = param.data.cpu().clone().detach()
-    to_return = {k: maybe_zero_3(v) for k, v in to_return.items()}
-    return to_return
+    return {k: maybe_zero_3(v) for k, v in to_return.items()}
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--wandb", action="store_true", default=False)
@@ -129,16 +128,16 @@ if args.resume_from_checkpoint:
         model = set_peft_model_state_dict(model, adapters_weights)
     else:
         print(f"Checkpoint {checkpoint_name} not found")
-    
+
     train_args_path = os.path.join(args.resume_from_checkpoint, "trainer_state.json")
-    
+
     if os.path.exists(train_args_path):
         import json
         base_train_args = json.load(open(train_args_path, 'r'))
         base_max_steps = base_train_args["max_steps"]
         resume_scale = base_max_steps / now_max_steps
         if base_max_steps > now_max_steps:
-            warnings.warn("epoch {} replace to the base_max_steps {}".format(EPOCHS, base_max_steps))
+            warnings.warn(f"epoch {EPOCHS} replace to the base_max_steps {base_max_steps}")
             EPOCHS = None
             MAX_STEPS = base_max_steps
         else:
@@ -266,13 +265,15 @@ trainer = transformers.Trainer(
         save_steps=args.save_steps,
         output_dir=OUTPUT_DIR,
         save_total_limit=30,
-        load_best_model_at_end=True if VAL_SET_SIZE > 0 else False,
+        load_best_model_at_end=VAL_SET_SIZE > 0,
         ddp_find_unused_parameters=False if ddp else None,
         report_to="wandb" if args.wandb else [],
         ignore_data_skip=args.ignore_data_skip,
         deepspeed="sample/zero_config.json" if args.deepspeed else None,
     ),
-    data_collator=transformers.DataCollatorForLanguageModeling(tokenizer, mlm=False)
+    data_collator=transformers.DataCollatorForLanguageModeling(
+        tokenizer, mlm=False
+    ),
 )
 model.config.use_cache = False
 

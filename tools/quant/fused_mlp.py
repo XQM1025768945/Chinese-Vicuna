@@ -119,7 +119,7 @@ try:
         zeros_shifter = (offs_bn % infearure_per_bits) * bits
         accumulator1 = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
         accumulator2 = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-        for k in range(0, num_pid_k):
+        for _ in range(0, num_pid_k):
             g1_idx = tl.load(g1_ptrs)
             g2_idx = tl.load(g2_ptrs)
 

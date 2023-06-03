@@ -52,11 +52,7 @@ if args.lora_path != '' and os.path.exists(args.lora_path):
 else:
     printf('>>> load lora from huggingface url', args.lora_path)
 
-if torch.cuda.is_available():
-    device = "cuda"
-else:
-    device = "cpu"
-
+device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
     if torch.backends.mps.is_available():
         device = "mps"
@@ -135,30 +131,30 @@ def save(
     **kwargs, 
 ):
     history = [] if history is None else history
-    data_point = {}
     if prompt_type == 'instruct':
         PROMPT = prompt.instruct_prompt(tokenizer,max_memory)
     elif prompt_type == 'chat':
         PROMPT = prompt.chat_prompt(tokenizer,max_memory)
     else:
         raise Exception('not support')
-    data_point['history'] = history
-    # 实际上是每一步都可以不一样，这里只保存最后一步
-    data_point['generation_parameter'] = {
-        "temperature":temperature,
-        "top_p":top_p,
-        "top_k":top_k,
-        "num_beams":num_beams,
-        "bos_token_id":tokenizer.bos_token_id,
-        "eos_token_id":tokenizer.eos_token_id,
-        "pad_token_id":tokenizer.pad_token_id,
-        "max_new_tokens":max_new_tokens,
-        "min_new_tokens":min_new_tokens, 
-        "do_sample":do_sample,
-        "repetition_penalty":repetition_penalty,
-        "max_memory":max_memory,
+    data_point = {
+        'history': history,
+        'generation_parameter': {
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+            "num_beams": num_beams,
+            "bos_token_id": tokenizer.bos_token_id,
+            "eos_token_id": tokenizer.eos_token_id,
+            "pad_token_id": tokenizer.pad_token_id,
+            "max_new_tokens": max_new_tokens,
+            "min_new_tokens": min_new_tokens,
+            "do_sample": do_sample,
+            "repetition_penalty": repetition_penalty,
+            "max_memory": max_memory,
+        },
+        'info': args.__dict__,
     }
-    data_point['info'] = args.__dict__
     print(data_point)
     if args.int8:
         file_name = f"{args.lora_path}/{args.prompt_type.replace(' ','_')}_int8.jsonl"
@@ -182,19 +178,18 @@ def evaluate(
     **kwargs,
 ):
     history = [] if history is None else history
-    data_point = {}
     if prompt_type == 'instruct':
         PROMPT = prompt.instruct_prompt(tokenizer,max_memory)
     elif prompt_type == 'chat':
         PROMPT = prompt.chat_prompt(tokenizer,max_memory)
     else:
         raise Exception('not support')
-    
-    data_point['history'] = copy.deepcopy(history)
+
+    data_point = {'history': copy.deepcopy(history)}
     data_point['input'] = inputs
 
     input_ids = PROMPT.preprocess_gen(data_point)
-    
+
     printf('------------------------------')
     printf(tokenizer.decode(input_ids))
     input_ids = torch.tensor([input_ids]).to(device) # batch=1
@@ -217,7 +212,7 @@ def evaluate(
 
         **kwargs,
     )
-    
+
     return_text = [(item['input'], item['output']) for item in history]
     out_memory =False
     outputs = None
@@ -236,14 +231,17 @@ def evaluate(
                     gen_token = generation_output[0][-1].item()
                     printf(gen_token, end='(')
                     printf(tokenizer.decode(gen_token), end=') ')
-                    
+
                     outputs = tokenizer.batch_decode(generation_output)
                     if args.show_beam:
                         show_text = "\n--------------------------------------------\n".join(
-                            [ PROMPT.postprocess(output)+" ▌" for output in outputs]
+                            [
+                                f"{PROMPT.postprocess(output)} ▌"
+                                for output in outputs
+                            ]
                         )
                     else:
-                        show_text = PROMPT.postprocess(outputs[0])+" ▌"
+                        show_text = f"{PROMPT.postprocess(outputs[0])} ▌"
                     yield return_text +[(inputs, show_text)], history
             except torch.cuda.OutOfMemoryError:
                 print('CUDA out of memory')
@@ -255,7 +253,7 @@ def evaluate(
             printf('[EOS]', end='\n')
             show_text = PROMPT.postprocess(outputs[0] if outputs is not None else '### Response:')
             return_len = len(show_text)
-            if out_memory==True:
+            if out_memory:
                 out_memory=False
                 show_text+= '<p style="color:#FF0000"> [GPU Out Of Memory] </p> '
             if return_len > 0:
@@ -267,7 +265,6 @@ def evaluate(
 
             return_text += [(inputs, show_text)]
             yield return_text, history
-        # common 
         else:
             try:
                 generation_output = model.generate(
@@ -366,7 +363,7 @@ with gr.Blocks() as demo:
             # here to support the change between the stop and submit button
             try:
                 for output in fn(*args):
-                    output = [o for o in output]
+                    output = list(output)
                     # output for output_components, the rest for [button, button]
                     yield output + [
                         gr.Button.update(visible=False),
@@ -376,9 +373,7 @@ with gr.Blocks() as demo:
                 yield [{'__type__': 'generic_update'}, {'__type__': 'generic_update'}] + [ gr.Button.update(visible=True), gr.Button.update(visible=False)]
 
         def cancel(history, chatbot):
-            if history == []:
-                return (None, None)
-            return history[:-1], chatbot[:-1]
+            return (None, None) if history == [] else (history[:-1], chatbot[:-1])
 
         extra_output = [submit_btn, stop_btn]
         save_btn.click(

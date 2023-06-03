@@ -80,10 +80,10 @@ lora_model_sd = lora_model.state_dict()
 
 n_layers = base_model.config.num_hidden_layers
 model_size = None
-for size in params.keys():
+for size in params:
     if n_layers == params[size]["n_layers"]:
         model_size = size
-        print(f">>> automatically recognize model_size={size}")
+        print(f">>> automatically recognize model_size={model_size}")
 if model_size is None:
     raise Exception('cannot recognize model_size! please check if your model is llama-based model')
 n_heads = base_model.config.num_attention_heads
@@ -153,21 +153,17 @@ new_state_dict = {}
 for k, v in lora_model_sd.items():
     new_k = translate_state_dict_key(k)
     if new_k is not None:
-        if "wq" in new_k or "wk" in new_k:
-            new_state_dict[new_k] = unpermute(v)
-        else:
-            new_state_dict[new_k] = v
-
+        new_state_dict[new_k] = unpermute(v) if "wq" in new_k or "wk" in new_k else v
 os.makedirs(args.out_path, exist_ok=True)
 if num_shards == 1:
     torch.save(new_state_dict, f"{args.out_path}/consolidated.00.pth")
     with open(f"{args.out_path}/params.json", "w") as f:
         json.dump(params[model_size], f)
 else:
-    output = [dict() for x in range(num_shards)]
+    output = [{} for _ in range(num_shards)]
     print('>>> start converting to shards...')
     # sharded the models
-    for key in new_state_dict.keys():
+    for key in new_state_dict:
         tensors = [new_state_dict[key]]
         print(key)
         print('  in shapes=', [p.shape for p in tensors])
@@ -193,10 +189,10 @@ else:
                 print()
                 break
     print('saving...')
-    
+
     with open(os.path.join(args.out_path, 'params.json'), 'w') as fp:
         fp.write(json.dumps(params))
-    
+
     for rank in range(num_shards):
         print(' ', rank)
         torch.save(output[rank], os.path.join(args.out_path, 'consolidated.%02d.pth' % rank))
