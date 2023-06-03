@@ -20,7 +20,11 @@ def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):
         return {name: module}
     res = {}
     for name1, child in module.named_children():
-        res.update(find_layers(child, layers=layers, name=name + '.' + name1 if name != '' else name1))
+        res |= find_layers(
+            child,
+            layers=layers,
+            name=f'{name}.{name1}' if name != '' else name1,
+        )
     return res
 
 def load_quant(model, checkpoint, wbits, groupsize=-1, fused_mlp=True, eval=True, warmup_autotune=True):
@@ -95,7 +99,7 @@ def main():
                         default=4,
                         choices=[2, 3, 4, 8],
                         help="bits to use for quantization; use 8 for evaluating base model.")
-    
+
     parser.add_argument('--text', type=str, default='the mean of life is', help='input text')
 
     parser.add_argument('--min_length', type=int, default=10, help='The minimum length of the sequence to be generated.')
@@ -113,11 +117,7 @@ def main():
     parser.add_argument('--gradio', action='store_true', help='Whether to use gradio to present results.')
     args = parser.parse_args()
 
-    if torch.cuda.is_available():
-        device = "cuda"
-    else:
-        device = "cpu"
-
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_quant(args.model_path, args.quant_path, args.wbits, args.groupsize)
     model.to(device)
     tokenizer = LlamaTokenizer.from_pretrained(args.model_path)

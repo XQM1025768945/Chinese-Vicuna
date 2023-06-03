@@ -40,11 +40,7 @@ if not os.path.exists(lora_bin_path) and args.use_local:
     else:
         assert ('Checkpoint is not Found!')
 
-if torch.cuda.is_available():
-    device = "cuda"
-else:
-    device = "cpu"
-
+device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
     if torch.backends.mps.is_available():
         device = "mps"
@@ -148,13 +144,15 @@ def evaluate(
                 repetition_penalty=float(repetition_penalty),
             ):
                 outputs = tokenizer.batch_decode(generation_output)
-                show_text = "\n--------------------------------------------\n".join(
-                    [output.split("### Response:")[1].strip().replace('�','')+" ▌" for output in outputs]
+                yield "\n--------------------------------------------\n".join(
+                    [
+                        output.split("### Response:")[1]
+                        .strip()
+                        .replace('�', '')
+                        + " ▌"
+                        for output in outputs
+                    ]
                 )
-                # if show_text== '':
-                #     yield last_show_text
-                # else:
-                yield show_text
             yield outputs[0].split("### Response:")[1].strip().replace('�','')
         else:
             generation_output = model.generate(

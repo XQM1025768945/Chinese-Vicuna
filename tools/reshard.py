@@ -8,7 +8,10 @@ import glob
 # python test.py 2 xx/checkpoint-1000/ckpt/ outs
 
 if len(sys.argv) != 4:
-    print('usage: %s <new-shards> <input-model-path> <output-model-path>' % sys.argv[0], file=sys.stderr)
+    print(
+        f'usage: {sys.argv[0]} <new-shards> <input-model-path> <output-model-path>',
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 num_shards = int(sys.argv[1])
@@ -39,7 +42,7 @@ layer_kind = {
     'rope.freqs': None,
 }
 
-output = [dict() for x in range(num_shards)]
+output = [{} for _ in range(num_shards)]
 
 print('converting...')
 for key in checkpoints[0].keys():

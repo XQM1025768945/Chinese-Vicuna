@@ -31,9 +31,7 @@ from peft.utils import PeftType, set_peft_model_state_dict
 
 def printf(*args,**kargs):
     if os.environ.get('DEBUG',False):
-        end = '\n'
-        if 'end' in kargs:
-            end = kargs['end']
+        end = kargs.get('end', '\n')
         print(*args, end=end, flush=True)
 
 class ColorFormatter(logging.Formatter):
@@ -116,11 +114,7 @@ class StreamGenerationMixin(GenerationMixin):
         ] = None,
         **kwargs,
     ):
-        if is_deepspeed_zero3_enabled() and dist.world_size() > 1:
-            synced_gpus = True
-        else:
-            synced_gpus = False
-
+        synced_gpus = bool(is_deepspeed_zero3_enabled() and dist.world_size() > 1)
         if kwargs.get("attention_mask", None) is not None:
             # concat prompt attention mask
             prefix_attention_mask = torch.ones(
@@ -759,8 +753,7 @@ class StreamPeftGenerationMixin(PeftModelForCausalLM, StreamGenerationMixin):
                 filename = hf_hub_download(model_id, "adapter_model.bin")
             except:  # noqa
                 raise ValueError(
-                    f"Can't find weights for {model_id} in {model_id} or in the Hugging Face Hub. "
-                    f"Please check that the file {'adapter_model.bin'} is present at {model_id}."
+                    f"Can't find weights for {model_id} in {model_id} or in the Hugging Face Hub. Please check that the file adapter_model.bin is present at {model_id}."
                 )
 
         adapters_weights = torch.load(

@@ -22,19 +22,16 @@ class instruct_prompt(prompt):
     prompt_post = "User:{input}\n\nAssistant:"
 
     def preprocess_gen(self, data_point):
-        if 'history' not in data_point:
-        # single instruction format {'instruction':..,'input':..}
-            if 'input' in data_point:
-                user_prompt = self.prompt_input.format_map(data_point)
-            else:
-                user_prompt = self.prompt.format_map(data_point)
-        else:
+        if 'history' in data_point:
         # multi turn format {'history':[..], 'input':[..]}
             user_prompt = "\n".join(["User:" + i['input']+"\n"+"Assistant:" + i['output'] for i in data_point['history']]) + "\nUser:" + data_point['input'] + "\nAssistant:"
             user_prompt = user_prompt[-self.max_len:]
+        elif 'input' in data_point:
+            user_prompt = self.prompt_input.format_map(data_point)
+        else:
+            user_prompt = self.prompt.format_map(data_point)
         user_prompt=self.prompt.format_map({'instruction':user_prompt})
-        input_ids = self.tokenizer(user_prompt)["input_ids"]
-        return input_ids
+        return self.tokenizer(user_prompt)["input_ids"]
 
     def preprocess_train(self, data_point):
         # single instruction format {'instruction':..,'input':..,'output':..}
@@ -44,12 +41,17 @@ class instruct_prompt(prompt):
             else:
                 user_prompt = self.prompt.format_map(data_point)
             output = data_point["output"]
-        # multi turn format {'input':[..], 'output':[..]}
         else:
-            user_prompt = ''
             lens = len(data_point['input'])
-            for i in range(lens-1):
-                user_prompt += self.prompt_history.format_map({'input':data_point['input'][i],'output':data_point['output'][i]})
+            user_prompt = ''.join(
+                self.prompt_history.format_map(
+                    {
+                        'input': data_point['input'][i],
+                        'output': data_point['output'][i],
+                    }
+                )
+                for i in range(lens - 1)
+            )
             user_prompt += self.prompt_post.format_map({'input':data_point['input'][-1]})
             user_prompt = self.prompt.format_map({'instruction': user_prompt})
             output = data_point['output'][-1]
@@ -85,21 +87,21 @@ class instruct_prompt(prompt):
             output = output.split("###")[0]
         if 'User' in output:
             output = output.split("User")[0]
-        output = output.replace('�','').replace('</s>', '') 
+        output = output.replace('�','').replace('</s>', '')
         if render:
             # fix gradio chatbot markdown code render bug
             lines = output.split("\n")
             for i, line in enumerate(lines):
                 if "```" in line:
-                    if line != "```":
-                        lines[i] = f'<pre><code class="language-{lines[i][3:]}">'
-                    else:
-                        lines[i] = '</code></pre>'
-                else:
-                    if i > 0:
-                        lines[i] = "<br/>" + line.replace("<", "&lt;").replace(">", "&gt;").replace("__", '\_\_')
+                    lines[i] = (
+                        f'<pre><code class="language-{lines[i][3:]}">'
+                        if line != "```"
+                        else '</code></pre>'
+                    )
+                elif i > 0:
+                    lines[i] = "<br/>" + line.replace("<", "&lt;").replace(">", "&gt;").replace("__", '\_\_')
             output =  "".join(lines)
-            # output = output.replace('<br/><pre>','\n<pre>') work for html; but not for gradio
+                # output = output.replace('<br/><pre>','\n<pre>') work for html; but not for gradio
         return output
 
 class chat_prompt(prompt):
@@ -120,7 +122,7 @@ class chat_prompt(prompt):
         for i in range(lens):
             tmp_prompt = self.prompt_history.format_map(data_point['history'][i])
             tokenized_lens.append(len(self.tokenizer(tmp_prompt,add_special_tokens=False)["input_ids"]))
-        
+
         # 启发式：/2 优先除前面的
         i = 0
         while sum(tokenized_lens) > len_avail and i < lens:
@@ -146,8 +148,7 @@ class chat_prompt(prompt):
             user_prompt += self.prompt_history.format_map(data_point['history'][i])
         user_prompt += input_prompt
         printf({'real_input:':user_prompt})
-        inputs = self.tokenizer(user_prompt)["input_ids"]
-        return inputs
+        return self.tokenizer(user_prompt)["input_ids"]
 
     def preprocess_train(self, data_point):
         user_prompt = self.prompt_pre
@@ -188,21 +189,21 @@ class chat_prompt(prompt):
         output = text.split("Assistant:")[-1].strip()
         if 'User:' in output:
             output = output.split("User:")[0]
-        output = output.replace('�','') 
+        output = output.replace('�','')
         if render:
             # fix gradio chatbot markdown code render bug
             lines = output.split("\n")
             for i, line in enumerate(lines):
                 if "```" in line:
-                    if line != "```":
-                        lines[i] = f'<pre><code class="language-{lines[i][3:]}">'
-                    else:
-                        lines[i] = '</code></pre>'
-                else:
-                    if i > 0:
-                        lines[i] = "<br/>" + line.replace("<", "&lt;").replace(">", "&gt;").replace("__", '\_\_')
+                    lines[i] = (
+                        f'<pre><code class="language-{lines[i][3:]}">'
+                        if line != "```"
+                        else '</code></pre>'
+                    )
+                elif i > 0:
+                    lines[i] = "<br/>" + line.replace("<", "&lt;").replace(">", "&gt;").replace("__", '\_\_')
             output =  "".join(lines)
-            # output = output.replace('<br/><pre>','\n<pre>') work for html; but not for gradio
+                # output = output.replace('<br/><pre>','\n<pre>') work for html; but not for gradio
         return output
 
     def get_data_collator():

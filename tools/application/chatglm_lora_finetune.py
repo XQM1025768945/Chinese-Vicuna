@@ -46,11 +46,9 @@ config = LoraConfig(
 LR = 2e-5
 NUM_EPOCHS = 3
 warm_up_ratio = 0.1
-device_map = "auto"
 world_size = int(os.environ.get("WORLD_SIZE", 1))
 ddp = world_size != 1
-if ddp:
-    device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
+device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else "auto"
 if use_wandb:
     wandb.init(
         project="LoRA",
@@ -117,8 +115,8 @@ class AlpacaDataset(Dataset):
             completion = self.pairs[index]['completion'].replace('[MASK]', '//MASK//').replace('[gMASK]', '//gMASK//')
             prompt = self.tokenizer.encode(prompt)
             completion = self.tokenizer.encode(completion, add_special_tokens=False)
-            if 150001 not in prompt:
-                import pdb; pdb.set_trace()
+        if 150001 not in prompt:
+            import pdb; pdb.set_trace()
         return {'prompt':prompt, 'completion':completion}
 
     def __len__(self):
@@ -129,7 +127,7 @@ def collate_fn(batch):
     labels = []
     position_ids = []
     device='cuda:0'
-    _max_length = max([len(obj['prompt'])+len(obj['completion']) for obj in batch])
+    _max_length = max(len(obj['prompt'])+len(obj['completion']) for obj in batch)
     attention_mask = torch.ones((len(batch), _max_length, _max_length), device=device)
     attention_mask.tril_()
 
@@ -158,7 +156,7 @@ train_dataset = AlpacaDataset(pairs,tokenizer=tokenizer,)
 train_dataloader = DataLoader(dataset=train_dataset, collate_fn = collate_fn, shuffle=True, batch_size=Per_GPU_BATCH_SIZE)
 
 # check
-for step, batch in enumerate(t:=tqdm.tqdm(train_dataloader)):
+for _ in t:=tqdm.tqdm(train_dataloader):
     pass
 
 model = AutoModel.from_pretrained(
@@ -208,8 +206,8 @@ for key, module in model.named_modules():
 lora.mark_only_lora_as_trainable(model)
 
 model_parameters = filter(lambda p: p.requires_grad, model.parameters())
-trainable_params = sum([np.prod(p.size()) for p in model_parameters])
-non_trainable_params = sum([np.prod(p.size()) for p in model_parameters])
+trainable_params = sum(np.prod(p.size()) for p in model_parameters)
+non_trainable_params = sum(np.prod(p.size()) for p in model_parameters)
 print('trainable_params:{} ({:.2f}%), non_trainable_params:{}'.format(
     trainable_params, trainable_params/non_trainable_params*100,non_trainable_params
 ))
@@ -236,8 +234,8 @@ for epoch in range(NUM_EPOCHS):
             total_loss += loss_detach
             loss = outputs.loss
 
-            if accelerator.is_main_process:
-                if step % log_interval == 0:
+            if step % log_interval == 0:
+                if accelerator.is_main_process:
                     wandb.log({
                         'train/loss': loss_detach.item(),
                     })

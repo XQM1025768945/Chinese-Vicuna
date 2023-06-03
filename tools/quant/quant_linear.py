@@ -111,12 +111,12 @@ try:
 
             zeros = (zeros >> zeros_shifter[None, :]) & maxq
             zeros = (zeros + 1)
-        
+
         shifter = (offs_k % infearure_per_bits) * bits
         zeros_shifter = (offs_bn % infearure_per_bits) * bits
         accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
-        for k in range(0, num_pid_k):
+        for _ in range(0, num_pid_k):
             g_idx = tl.load(g_ptrs)
 
             # Fetch scales and zeros; these are per-outfeature and thus reused in the inner loop
@@ -241,12 +241,12 @@ try:
 
             zeros = (zeros >> zeros_shifter[None, :]) & maxq
             zeros = (zeros + 1)
-        
+
         shifter = (offs_bk % infearure_per_bits) * bits
         zeros_shifter = (offs_n % infearure_per_bits) * bits
         accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
 
-        for k in range(0, num_pid_n):
+        for _ in range(0, num_pid_n):
             # Fetch scales and zeros; these are per-outfeature and thus reused in the inner loop
             if not NO_GROUP:
                 scales = tl.load(scales_ptrs)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
@@ -349,9 +349,13 @@ class QuantLinear(nn.Module):
         if linear.bias is not None:
             self.bias = linear.bias.clone().half()
 
-        intweight = []
-        for idx in range(self.infeatures):
-            intweight.append(torch.round((linear.weight.data[:, idx] + scale_zeros[self.g_idx[idx]]) / self.scales[self.g_idx[idx]]).to(torch.int)[:, None])
+        intweight = [
+            torch.round(
+                (linear.weight.data[:, idx] + scale_zeros[self.g_idx[idx]])
+                / self.scales[self.g_idx[idx]]
+            ).to(torch.int)[:, None]
+            for idx in range(self.infeatures)
+        ]
         intweight = torch.cat(intweight, dim=1)
         intweight = intweight.t().contiguous()
         intweight = intweight.numpy().astype(np.uint32)
@@ -359,14 +363,13 @@ class QuantLinear(nn.Module):
         i = 0
         row = 0
         while row < qweight.shape[0]:
-            if self.bits in [2, 4, 8]:
-                for j in range(i, i + (32 // self.bits)):
-                    qweight[row] |= intweight[j] << (self.bits * (j - i))
-                i += 32 // self.bits
-                row += 1
-            else:
+            if self.bits not in [2, 4, 8]:
                 raise NotImplementedError("Only 2,4,8 bits are supported.")
 
+            for j in range(i, i + (32 // self.bits)):
+                qweight[row] |= intweight[j] << (self.bits * (j - i))
+            i += 32 // self.bits
+            row += 1
         qweight = qweight.astype(np.int32)
         self.qweight = torch.from_numpy(qweight)
 
@@ -376,14 +379,13 @@ class QuantLinear(nn.Module):
         i = 0
         col = 0
         while col < qzeros.shape[1]:
-            if self.bits in [2, 4, 8]:
-                for j in range(i, i + (32 // self.bits)):
-                    qzeros[:, col] |= zeros[:, j] << (self.bits * (j - i))
-                i += 32 // self.bits
-                col += 1
-            else:
+            if self.bits not in [2, 4, 8]:
                 raise NotImplementedError("Only 2,4,8 bits are supported.")
 
+            for j in range(i, i + (32 // self.bits)):
+                qzeros[:, col] |= zeros[:, j] << (self.bits * (j - i))
+            i += 32 // self.bits
+            col += 1
         qzeros = qzeros.astype(np.int32)
         self.qzeros = torch.from_numpy(qzeros)
 
@@ -399,12 +401,18 @@ def make_quant_linear(module, names, bits, groupsize, name=''):
         return
     for attr in dir(module):
         tmp = getattr(module, attr)
-        name1 = name + '.' + attr if name != '' else attr
+        name1 = f'{name}.{attr}' if name != '' else attr
         if name1 in names:
             delattr(module, attr)
             setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
     for name1, child in module.named_children():
-        make_quant_linear(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
+        make_quant_linear(
+            child,
+            names,
+            bits,
+            groupsize,
+            f'{name}.{name1}' if name != '' else name1,
+        )
 
 
 def autotune_warmup_linear(model, transpose=False):

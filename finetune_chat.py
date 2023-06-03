@@ -50,9 +50,9 @@ MICRO_BATCH_SIZE = args.micro_batch  # this could actually be 5 but i like power
 BATCH_SIZE = args.total_batch
 MAX_STEPS = None
 GRADIENT_ACCUMULATION_STEPS = BATCH_SIZE // MICRO_BATCH_SIZE
-EPOCHS = args.num_epoch 
+EPOCHS = args.num_epoch
 LEARNING_RATE = 3e-4  # the Karpathy constant
-CUTOFF_LEN = 2048  
+CUTOFF_LEN = 2048
 LORA_R = 8
 LORA_ALPHA = 16
 LORA_DROPOUT = 0.05
@@ -66,7 +66,7 @@ TARGET_MODULES = [
     "gate_proj",
     "up_proj",
 ]
-DATA_PATH = args.data_path  
+DATA_PATH = args.data_path
 OUTPUT_DIR = args.output_path  # "lora-Vicuna"
 
 device_map = "auto"
@@ -78,24 +78,23 @@ if ddp:
 # we must make sure batch_size and gradient_accumulation_steps not changed for resuming training.
 if args.resume_from_checkpoint:
     old_args_path = os.path.join(args.resume_from_checkpoint, 'training_args.bin')
-    if os.path.exists(old_args_path):
-        old_args = torch.load(old_args_path)
-        if MICRO_BATCH_SIZE != old_args.per_device_train_batch_size:
-            raise Exception(
-                f'current micro batch size {MICRO_BATCH_SIZE} is not equal to the old {old_args.per_device_train_batch_size},'
-                ' This will cause the trainer skips wrong epochs or steps.'
-                f'please change your micro batch size to {old_args.per_device_train_batch_size}'
-                ' or cancel resuming your training'
-                )
-        if GRADIENT_ACCUMULATION_STEPS != old_args.gradient_accumulation_steps:
-            raise Exception(
-                f'current total batch {BATCH_SIZE} is not equal to the old {old_args.gradient_accumulation_steps*old_args.per_device_train_batch_size},'
-                ' This will cause the trainer skips wrong epochs or steps.'
-                f'please change your total batch size to {old_args.gradient_accumulation_steps*old_args.per_device_train_batch_size}'    
-                ' or cancel resuming your training'
-            )
-    else:
+    if not os.path.exists(old_args_path):
         raise Exception(f'{old_args_path} is not exist!')
+    old_args = torch.load(old_args_path)
+    if MICRO_BATCH_SIZE != old_args.per_device_train_batch_size:
+        raise Exception(
+            f'current micro batch size {MICRO_BATCH_SIZE} is not equal to the old {old_args.per_device_train_batch_size},'
+            ' This will cause the trainer skips wrong epochs or steps.'
+            f'please change your micro batch size to {old_args.per_device_train_batch_size}'
+            ' or cancel resuming your training'
+            )
+    if GRADIENT_ACCUMULATION_STEPS != old_args.gradient_accumulation_steps:
+        raise Exception(
+            f'current total batch {BATCH_SIZE} is not equal to the old {old_args.gradient_accumulation_steps*old_args.per_device_train_batch_size},'
+            ' This will cause the trainer skips wrong epochs or steps.'
+            f'please change your total batch size to {old_args.gradient_accumulation_steps*old_args.per_device_train_batch_size}'    
+            ' or cancel resuming your training'
+        )
     # checkpoint = os.path.join(args.resume_from_checkpoint, 'pytorch_model.bin')
 
 logger = utils.set_file_logger(__name__,OUTPUT_DIR)
@@ -106,7 +105,7 @@ logger.info(f'>>> using {args}')
 train_tokenizer = LlamaTokenizer.from_pretrained(args.model_path, add_eos_token=True)
 assert train_tokenizer.eos_token_id == 2, "Tokenizer eos is wrong!!!"
 # unk. we want this to be different from the eos token
-train_tokenizer.pad_token_id = 0  
+train_tokenizer.pad_token_id = 0
 # cannot use eos in generation!
 # tokenizer.padding_side = "left"  # Allow batched inference
 test_tokenizer = LlamaTokenizer.from_pretrained(args.model_path)
@@ -118,7 +117,8 @@ else:
     raise Exception('not support')
 # check tokenizer
 data = load_dataset('json', data_files=DATA_PATH)
-import random;start = random.randint(1, 100)
+import random
+start = random.randint(1, 100)
 examples = Dataset.from_dict(data['train'][start:start+5]).map(PROMPT.preprocess_train)
 for example in examples:
     logger.info(f'>>> using prompt {args.prompt_type}, prompt example:\n { train_tokenizer.decode(example["input_ids"]) }')
@@ -153,14 +153,12 @@ if args.resume_from_checkpoint:
             logger.warning("The file name of the lora checkpoint'adapter_model.bin' is replaced with 'pytorch_model.bin'")
         else:
             args.resume_from_checkpoint = None  # So the trainer won't try loading its state
-    # pytorch_model.bin
-    if os.path.exists(checkpoint_name):
-        logger.info(f'>>> load lora from {checkpoint_name}')
-        adapters_weights = torch.load(checkpoint_name)
-        set_peft_model_state_dict(model, adapters_weights)
-    else:
+    if not os.path.exists(checkpoint_name):
         raise Exception(f"Checkpoint {checkpoint_name} not found with resume_from_checkpoint=True!")
 
+    logger.info(f'>>> load lora from {checkpoint_name}')
+    adapters_weights = torch.load(checkpoint_name)
+    set_peft_model_state_dict(model, adapters_weights)
 trainable_params = 0
 all_param = 0
 for _, param in model.named_parameters():
@@ -241,18 +239,18 @@ trainer = transformers.Trainer(
         learning_rate=LEARNING_RATE,
         fp16=True,
         logging_steps=args.log_steps,
-        logging_first_step=True, # convenient
+        logging_first_step=True,
         evaluation_strategy="steps" if VAL_SET_SIZE > 0 else "no",
         save_strategy="steps",
         eval_steps=args.eval_steps if VAL_SET_SIZE > 0 else None,
         save_steps=args.save_steps,
         output_dir=OUTPUT_DIR,
-        load_best_model_at_end=True if VAL_SET_SIZE > 0 else False,
+        load_best_model_at_end=VAL_SET_SIZE > 0,
         ddp_find_unused_parameters=False if ddp else None,
         report_to="wandb" if args.wandb else [],
         ignore_data_skip=args.ignore_data_skip,
     ),
-    data_collator=PROMPT.data_collator()
+    data_collator=PROMPT.data_collator(),
 )
 trainer.add_callback(CustomCallback(trainer))
 model.config.use_cache = False

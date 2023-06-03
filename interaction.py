@@ -36,11 +36,7 @@ if not os.path.exists(lora_bin_path) and args.use_local:
         warnings.warn("The file name of the lora checkpoint'pytorch_model.bin' is replaced with 'adapter_model.bin'")
     else:
         assert ('Checkpoint is not Found!')
-if torch.cuda.is_available():
-    device = "cuda"
-else:
-    device = "cpu"
-
+device = "cuda" if torch.cuda.is_available() else "cpu"
 try:
     if torch.backends.mps.is_available():
         device = "mps"
@@ -123,7 +119,14 @@ def interaction(
     now_input = input
     history = history or []
     if len(history) != 0:
-        input = "\n".join(["User:" + i[0]+"\n"+"Assistant:" + i[1] for i in history]) + "\n" + "User:" + input
+        input = (
+            "\n".join(
+                [f"User:{i[0]}" + "\n" + "Assistant:" + i[1] for i in history]
+            )
+            + "\n"
+            + "User:"
+            + input
+        )
         if len(input) > max_memory:
             input = input[-max_memory:]
     print(input)

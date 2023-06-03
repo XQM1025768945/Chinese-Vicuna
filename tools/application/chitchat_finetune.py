@@ -174,11 +174,13 @@ trainer = transformers.Trainer(
         eval_steps=args.eval_steps if VAL_SET_SIZE > 0 else None,
         save_steps=args.save_steps,
         output_dir=OUTPUT_DIR,
-        load_best_model_at_end=True if VAL_SET_SIZE > 0 else False,
+        load_best_model_at_end=VAL_SET_SIZE > 0,
         ddp_find_unused_parameters=False if ddp else None,
         report_to="wandb" if args.wandb else [],
     ),
-    data_collator=transformers.DataCollatorForLanguageModeling(tokenizer, mlm=False),
+    data_collator=transformers.DataCollatorForLanguageModeling(
+        tokenizer, mlm=False
+    ),
 )
 model.config.use_cache = False
 
